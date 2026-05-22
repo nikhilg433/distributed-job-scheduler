@@ -7,36 +7,6 @@ import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.test.context.TestPropertySource;
 
-/**
- * Spring context smoke test — verifies all beans wire without errors.
- *
- * Strategy: mock the external infrastructure clients (Redis, Kafka)
- * so no actual broker connections are attempted. The JPA layer uses
- * H2 in-memory database. Quartz uses in-memory job store.
- *
- * This test runs in < 10 seconds with zero external dependencies.
- */
-@SpringBootTest
-@TestPropertySource(properties = {
-    // ── H2 in-memory database (MySQL-compatible mode) ──────────────────
-    "spring.datasource.url=jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1;MODE=MySQL;NON_KEYWORDS=VALUE",
-    "spring.datasource.driver-class-name=org.h2.Driver",
-    "spring.datasource.username=sa",
-    "spring.datasource.password=",
-    "spring.jpa.database-platform=org.hibernate.dialect.H2Dialect",
-    "spring.jpa.hibernate.ddl-auto=create-drop",
-    "spring.jpa.open-in-view=false",
-
-    // ── Quartz in-memory (no QRTZ_* tables needed) ─────────────────────
-package com.jobscheduler;
-
-import org.junit.jupiter.api.Test;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
-import org.springframework.data.redis.core.RedisTemplate;
-import org.springframework.kafka.core.KafkaTemplate;
-import org.springframework.test.context.TestPropertySource;
-
 @SpringBootTest
 @TestPropertySource(properties = {
     "spring.datasource.url=jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1;MODE=MySQL;NON_KEYWORDS=VALUE",
@@ -63,8 +33,6 @@ import org.springframework.test.context.TestPropertySource;
 })
 class DistributedJobSchedulerApplicationTests {
 
-    // Name the bean explicitly to avoid ambiguity between
-    // our custom redisTemplate and Spring's stringRedisTemplate
     @MockBean(name = "redisTemplate")
     RedisTemplate<String, String> redisTemplate;
 
