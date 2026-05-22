@@ -5,6 +5,9 @@
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.2.5-brightgreen?logo=springboot)](https://spring.io/projects/spring-boot)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
+> 🚀 **Live Demo:** Runs locally via Docker Compose — see [Quick Start](#quick-start) below.
+> Full stack: MySQL + Redis + Kafka + 2 app instances on a single machine.
+
 A **production-grade distributed job scheduling system** built with Java 17 and Spring Boot 3.  
 Jobs run **exactly once** across multiple service instances via Redis SETNX distributed locking, Quartz clustered JDBC job store, and Apache Kafka lifecycle events.
 
