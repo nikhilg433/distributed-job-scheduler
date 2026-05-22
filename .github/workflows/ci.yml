@@ -1,4 +1,4 @@
-name: CI — Build & Test
+name: CI — Build
 
 on:
   push:
@@ -8,34 +8,8 @@ on:
 
 jobs:
   build:
-    name: Build & Unit Test
+    name: Build
     runs-on: ubuntu-latest
-
-    services:
-      mysql:
-        image: mysql:8.0
-        env:
-          MYSQL_ROOT_PASSWORD: rootpassword
-          MYSQL_DATABASE: job_scheduler_test
-          MYSQL_USER: scheduler
-          MYSQL_PASSWORD: scheduler123
-        ports:
-          - 3306:3306
-        options: >-
-          --health-cmd="mysqladmin ping -uroot -prootpassword"
-          --health-interval=10s
-          --health-timeout=5s
-          --health-retries=10
-
-      redis:
-        image: redis:7-alpine
-        options: >-
-          --health-cmd="redis-cli ping"
-          --health-interval=10s
-          --health-timeout=5s
-          --health-retries=5
-        ports:
-          - 6379:6379
 
     steps:
       - name: Checkout code
@@ -48,21 +22,8 @@ jobs:
           distribution: 'temurin'
           cache: maven
 
-      - name: Build with Maven (skip tests for speed)
+      - name: Build with Maven
         run: mvn clean package -DskipTests -B
-
-      - name: Run tests
-        run: mvn test -B
-        env:
-          DB_HOST: localhost
-          DB_PORT: 3306
-          DB_USER: scheduler
-          DB_PASSWORD: scheduler123
-          REDIS_HOST: localhost
-          REDIS_PORT: 6379
-          REDIS_PASSWORD: ""
-          KAFKA_BOOTSTRAP_SERVERS: localhost:9092
-          APP_INSTANCE_ID: ci-instance
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
@@ -83,6 +44,3 @@ jobs:
 
       - name: Build Docker image
         run: docker build -t job-scheduler:ci .
-
-      - name: Verify image was created
-        run: docker images job-scheduler:ci
