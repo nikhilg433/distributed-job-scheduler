@@ -1,6 +1,6 @@
 # Distributed Job Scheduler
 
-[![CI](https://github.com/YOUR_USERNAME/distributed-job-scheduler/actions/workflows/ci.yml/badge.svg)](https://github.com/YOUR_USERNAME/distributed-job-scheduler/actions)
+[![CI](https://github.com/nikhilg433/distributed-job-scheduler/actions/workflows/ci.yml/badge.svg)](https://github.com/nikhilg433/distributed-job-scheduler/actions)
 [![Java](https://img.shields.io/badge/Java-17-orange?logo=openjdk)](https://openjdk.org/projects/jdk/17/)
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.2.5-brightgreen?logo=springboot)](https://spring.io/projects/spring-boot)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
@@ -88,7 +88,7 @@ Instance-1    Instance-2
 ## Quick Start
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/distributed-job-scheduler.git
+git clone https://github.com/nikhilg433/distributed-job-scheduler.git
 cd distributed-job-scheduler
 
 # Build image and start all services
