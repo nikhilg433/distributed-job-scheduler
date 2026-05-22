@@ -1,0 +1,159 @@
+spring:
+  application:
+    name: distributed-job-scheduler
+
+  # ─────────────────────────────────────────────────────────────────────
+  # MySQL 8 — Primary datastore
+  # ─────────────────────────────────────────────────────────────────────
+  datasource:
+    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/job_scheduler?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC&characterEncoding=UTF-8
+    username: ${DB_USER:scheduler}
+    password: ${DB_PASSWORD:scheduler123}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      pool-name: SchedulerHikariPool
+      minimum-idle: 5
+      maximum-pool-size: 20
+      idle-timeout: 300000
+      connection-timeout: 20000
+      max-lifetime: 1200000
+
+  # ─────────────────────────────────────────────────────────────────────
+  # JPA / Hibernate
+  # ─────────────────────────────────────────────────────────────────────
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    open-in-view: false         # Avoid lazy-load pitfalls in web layer
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.MySQLDialect
+        format_sql: true
+        use_sql_comments: true
+        jdbc:
+          time_zone: UTC
+
+  # ─────────────────────────────────────────────────────────────────────
+  # Redis — distributed locking (SETNX pattern, implemented manually)
+  # FIX #2: commons-pool2 on classpath enables Lettuce pool config below
+  # ─────────────────────────────────────────────────────────────────────
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:redis123}
+      timeout: 2000ms
+      lettuce:
+        pool:
+          min-idle: 2
+          max-idle: 10
+          max-active: 20
+          max-wait: 1000ms
+
+  # ─────────────────────────────────────────────────────────────────────
+  # Apache Kafka
+  #
+  # FIX #1: Producer serializes Map→JSON string via ObjectMapper in code.
+  #         Consumer uses StringDeserializer (not JsonDeserializer) because
+  #         messages are already JSON strings. JsonDeserializer here would
+  #         try to deserialize into a typed object and crash.
+  # ─────────────────────────────────────────────────────────────────────
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      acks: all
+      retries: 3
+    consumer:
+      group-id: job-scheduler-group
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      enable-auto-commit: false   # Manual offset commit via Spring's AckMode
+
+  # ─────────────────────────────────────────────────────────────────────
+  # Quartz — clustered JDBC job store
+  # isClustered=true means all nodes share QRTZ_* MySQL tables.
+  # Only ONE node fires each trigger (via SELECT FOR UPDATE on QRTZ_LOCKS).
+  # ─────────────────────────────────────────────────────────────────────
+  quartz:
+    job-store-type: jdbc
+    jdbc:
+      initialize-schema: always
+    properties:
+      org.quartz.scheduler.instanceName: DistributedJobScheduler
+      org.quartz.scheduler.instanceId: AUTO
+      org.quartz.jobStore.isClustered: true
+      org.quartz.jobStore.clusterCheckinInterval: 5000
+      org.quartz.threadPool.threadCount: 10
+
+# ─────────────────────────────────────────────────────────────────────
+# Server
+# ─────────────────────────────────────────────────────────────────────
+server:
+  port: ${SERVER_PORT:8080}
+  error:
+    include-message: always
+    include-binding-errors: always
+
+# ─────────────────────────────────────────────────────────────────────
+# SpringDoc / Swagger UI
+# http://localhost:8080/swagger-ui.html
+# ─────────────────────────────────────────────────────────────────────
+springdoc:
+  api-docs:
+    path: /api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    operations-sorter: method
+    tags-sorter: alpha
+    try-it-out-enabled: true
+  show-actuator: false
+
+# ─────────────────────────────────────────────────────────────────────
+# Actuator
+# ─────────────────────────────────────────────────────────────────────
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: always
+
+# ─────────────────────────────────────────────────────────────────────
+# Application properties
+#
+# FIX #3: APP_INSTANCE_ID env var is provided by Docker Compose.
+#         For local dev without Docker, falls back to "local-dev-1".
+#         Removed ${random.uuid} — Spring's @Value doesn't support
+#         random.* inside nested ${} expressions reliably.
+# ─────────────────────────────────────────────────────────────────────
+app:
+  instance-id: ${APP_INSTANCE_ID:local-dev-1}
+  scheduler:
+    lock-timeout-seconds: 300
+    default-max-retries: 3
+    base-retry-delay-seconds: 30
+  kafka:
+    topics:
+      job-scheduled: job.scheduled
+      job-started: job.started
+      job-completed: job.completed
+      job-failed: job.failed
+      job-cancelled: job.cancelled
+
+# ─────────────────────────────────────────────────────────────────────
+# Logging
+# ─────────────────────────────────────────────────────────────────────
+logging:
+  level:
+    com.jobscheduler: DEBUG
+    org.quartz: WARN
+    org.springframework.kafka: INFO
+    org.hibernate.SQL: WARN
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level [instanceId=${app.instance-id}] %logger{36} - %msg%n"

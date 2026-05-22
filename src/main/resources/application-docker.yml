@@ -1,0 +1,17 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Docker profile — activated automatically in Docker Compose via
+#   SPRING_PROFILES_ACTIVE: docker  (or by the env vars in docker-compose.yml)
+#
+# This profile overrides only the values that differ inside Docker networking.
+# All other settings inherit from application.yml.
+# ─────────────────────────────────────────────────────────────────────────────
+
+spring:
+  jpa:
+    hibernate:
+      ddl-auto: update   # Safe for dev Docker; use validate/none in real prod
+
+logging:
+  level:
+    com.jobscheduler: INFO   # Less verbose than DEBUG in Docker logs
+    org.quartz: WARN

@@ -1,0 +1,204 @@
+
+services:
+
+  # ─────────────────────────────────────────────────────────────────────
+  # MySQL 8
+  # ─────────────────────────────────────────────────────────────────────
+  mysql:
+    image: mysql:8.0
+    container_name: job-scheduler-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: job_scheduler
+      MYSQL_USER: scheduler
+      MYSQL_PASSWORD: scheduler123
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-prootpassword"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - scheduler-network
+
+  # ─────────────────────────────────────────────────────────────────────
+  # Redis 7 — SETNX-based distributed locking
+  # ─────────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: job-scheduler-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes --requirepass redis123
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "redis123", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - scheduler-network
+
+  # ─────────────────────────────────────────────────────────────────────
+  # Zookeeper — Kafka dependency
+  # ─────────────────────────────────────────────────────────────────────
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.6.0
+    container_name: job-scheduler-zookeeper
+    restart: unless-stopped
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+    volumes:
+      - zookeeper_data:/var/lib/zookeeper/data
+      - zookeeper_log:/var/lib/zookeeper/log
+    networks:
+      - scheduler-network
+
+  # ─────────────────────────────────────────────────────────────────────
+  # Kafka — job lifecycle event streaming
+  # FIX #7: healthcheck uses kafka-topics command (always on PATH in
+  #         confluent image) instead of kafka-broker-api-versions
+  # ─────────────────────────────────────────────────────────────────────
+  kafka:
+    image: confluentinc/cp-kafka:7.6.0
+    container_name: job-scheduler-kafka
+    restart: unless-stopped
+    depends_on:
+      zookeeper:
+        condition: service_started
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD", "kafka-topics", "--bootstrap-server", "localhost:9092", "--list"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+    networks:
+      - scheduler-network
+
+  # ─────────────────────────────────────────────────────────────────────
+  # Kafka UI — browse topics and messages at http://localhost:8090
+  # ─────────────────────────────────────────────────────────────────────
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: job-scheduler-kafka-ui
+    restart: unless-stopped
+    depends_on:
+      kafka:
+        condition: service_healthy
+    ports:
+      - "8090:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
+    networks:
+      - scheduler-network
+
+  # ─────────────────────────────────────────────────────────────────────
+  # App Instance 1 — port 8080
+  #
+  # FIX #6: env var names match Spring Boot's relaxed binding.
+  #         Spring Boot maps DB_HOST → spring.datasource.url (via our yml
+  #         ${DB_HOST} placeholder). All env vars use the exact names
+  #         referenced in application.yml with ${...} expressions.
+  # ─────────────────────────────────────────────────────────────────────
+  app-instance-1:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: job-scheduler:latest
+    container_name: job-scheduler-app-1
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    environment:
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_USER: scheduler
+      DB_PASSWORD: scheduler123
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: redis123
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      APP_INSTANCE_ID: instance-1
+      SERVER_PORT: 8080
+      SPRING_PROFILES_ACTIVE: docker
+    networks:
+      - scheduler-network
+
+  # ─────────────────────────────────────────────────────────────────────
+  # App Instance 2 — port 8081
+  # Demonstrates distributed locking: both instances share MySQL + Redis
+  # so only ONE runs each job even when both receive the Quartz trigger.
+  # ─────────────────────────────────────────────────────────────────────
+  app-instance-2:
+    image: job-scheduler:latest
+    container_name: job-scheduler-app-2
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      app-instance-1:
+        condition: service_started
+    ports:
+      - "8081:8080"
+    environment:
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_USER: scheduler
+      DB_PASSWORD: scheduler123
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: redis123
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      APP_INSTANCE_ID: instance-2
+      SERVER_PORT: 8080
+      SPRING_PROFILES_ACTIVE: docker
+    networks:
+      - scheduler-network
+
+volumes:
+  mysql_data:
+  redis_data:
+  kafka_data:
+  zookeeper_data:
+  zookeeper_log:
+
+networks:
+  scheduler-network:
+    driver: bridge
