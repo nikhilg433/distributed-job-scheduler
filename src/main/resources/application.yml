@@ -3,7 +3,7 @@ spring:
     name: distributed-job-scheduler
 
   # ─────────────────────────────────────────────────────────────────────
-  # MySQL 8 — Primary datastore
+  # MySQL
   # ─────────────────────────────────────────────────────────────────────
   datasource:
     url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/job_scheduler?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC&characterEncoding=UTF-8
@@ -25,18 +25,16 @@ spring:
     hibernate:
       ddl-auto: update
     show-sql: false
-    open-in-view: false         # Avoid lazy-load pitfalls in web layer
+    open-in-view: false
     properties:
       hibernate:
         dialect: org.hibernate.dialect.MySQLDialect
         format_sql: true
-        use_sql_comments: true
         jdbc:
           time_zone: UTC
 
   # ─────────────────────────────────────────────────────────────────────
-  # Redis — distributed locking (SETNX pattern, implemented manually)
-  # FIX #2: commons-pool2 on classpath enables Lettuce pool config below
+  # Redis — distributed locking via SETNX
   # ─────────────────────────────────────────────────────────────────────
   data:
     redis:
@@ -54,12 +52,7 @@ spring:
           max-wait: 1000ms
 
   # ─────────────────────────────────────────────────────────────────────
-  # Apache Kafka
-  #
-  # FIX #1: Producer serializes Map→JSON string via ObjectMapper in code.
-  #         Consumer uses StringDeserializer (not JsonDeserializer) because
-  #         messages are already JSON strings. JsonDeserializer here would
-  #         try to deserialize into a typed object and crash.
+  # Kafka
   # ─────────────────────────────────────────────────────────────────────
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
@@ -73,12 +66,10 @@ spring:
       auto-offset-reset: earliest
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
-      enable-auto-commit: false   # Manual offset commit via Spring's AckMode
+      enable-auto-commit: false
 
   # ─────────────────────────────────────────────────────────────────────
   # Quartz — clustered JDBC job store
-  # isClustered=true means all nodes share QRTZ_* MySQL tables.
-  # Only ONE node fires each trigger (via SELECT FOR UPDATE on QRTZ_LOCKS).
   # ─────────────────────────────────────────────────────────────────────
   quartz:
     job-store-type: jdbc
@@ -128,11 +119,6 @@ management:
 
 # ─────────────────────────────────────────────────────────────────────
 # Application properties
-#
-# FIX #3: APP_INSTANCE_ID env var is provided by Docker Compose.
-#         For local dev without Docker, falls back to "local-dev-1".
-#         Removed ${random.uuid} — Spring's @Value doesn't support
-#         random.* inside nested ${} expressions reliably.
 # ─────────────────────────────────────────────────────────────────────
 app:
   instance-id: ${APP_INSTANCE_ID:local-dev-1}
@@ -149,6 +135,16 @@ app:
       job-cancelled: job.cancelled
 
 # ─────────────────────────────────────────────────────────────────────
+# JWT Configuration
+# NEVER hardcode the secret — always use environment variable.
+# Secret must be at least 256 bits (32 chars) for HS256.
+# Generate a strong secret: openssl rand -base64 64
+# ─────────────────────────────────────────────────────────────────────
+jwt:
+  secret: ${JWT_SECRET:404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970}
+  expiration-ms: ${JWT_EXPIRATION_MS:86400000}   # 24 hours in milliseconds
+
+# ─────────────────────────────────────────────────────────────────────
 # Logging
 # ─────────────────────────────────────────────────────────────────────
 logging:
@@ -156,6 +152,7 @@ logging:
     com.jobscheduler: DEBUG
     org.quartz: WARN
     org.springframework.kafka: INFO
+    org.springframework.security: WARN
     org.hibernate.SQL: WARN
   pattern:
     console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level [instanceId=${app.instance-id}] %logger{36} - %msg%n"

@@ -1,8 +1,7 @@
-
 services:
 
   # ─────────────────────────────────────────────────────────────────────
-  # MySQL 8
+  # MySQL 8 — Primary database
   # ─────────────────────────────────────────────────────────────────────
   mysql:
     image: mysql:8.0
@@ -27,7 +26,7 @@ services:
       - scheduler-network
 
   # ─────────────────────────────────────────────────────────────────────
-  # Redis 7 — SETNX-based distributed locking
+  # Redis 7 — SETNX distributed locking
   # ─────────────────────────────────────────────────────────────────────
   redis:
     image: redis:7-alpine
@@ -67,8 +66,6 @@ services:
 
   # ─────────────────────────────────────────────────────────────────────
   # Kafka — job lifecycle event streaming
-  # FIX #7: healthcheck uses kafka-topics command (always on PATH in
-  #         confluent image) instead of kafka-broker-api-versions
   # ─────────────────────────────────────────────────────────────────────
   kafka:
     image: confluentinc/cp-kafka:7.6.0
@@ -101,7 +98,7 @@ services:
       - scheduler-network
 
   # ─────────────────────────────────────────────────────────────────────
-  # Kafka UI — browse topics and messages at http://localhost:8090
+  # Kafka UI — http://localhost:8090
   # ─────────────────────────────────────────────────────────────────────
   kafka-ui:
     image: provectuslabs/kafka-ui:latest
@@ -120,11 +117,6 @@ services:
 
   # ─────────────────────────────────────────────────────────────────────
   # App Instance 1 — port 8080
-  #
-  # FIX #6: env var names match Spring Boot's relaxed binding.
-  #         Spring Boot maps DB_HOST → spring.datasource.url (via our yml
-  #         ${DB_HOST} placeholder). All env vars use the exact names
-  #         referenced in application.yml with ${...} expressions.
   # ─────────────────────────────────────────────────────────────────────
   app-instance-1:
     build:
@@ -154,15 +146,21 @@ services:
       APP_INSTANCE_ID: instance-1
       SERVER_PORT: 8080
       SPRING_PROFILES_ACTIVE: docker
+      # JWT secret — use a strong random value in production
+      # Generate: openssl rand -base64 64
+      JWT_SECRET: 404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970
+      JWT_EXPIRATION_MS: 86400000
     networks:
       - scheduler-network
 
   # ─────────────────────────────────────────────────────────────────────
   # App Instance 2 — port 8081
-  # Demonstrates distributed locking: both instances share MySQL + Redis
-  # so only ONE runs each job even when both receive the Quartz trigger.
+  # Demonstrates distributed locking — both instances share same MySQL + Redis
   # ─────────────────────────────────────────────────────────────────────
   app-instance-2:
+    build:
+      context: .
+      dockerfile: Dockerfile
     image: job-scheduler:latest
     container_name: job-scheduler-app-2
     restart: unless-stopped
@@ -189,6 +187,8 @@ services:
       APP_INSTANCE_ID: instance-2
       SERVER_PORT: 8080
       SPRING_PROFILES_ACTIVE: docker
+      JWT_SECRET: 404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970
+      JWT_EXPIRATION_MS: 86400000
     networks:
       - scheduler-network
 
